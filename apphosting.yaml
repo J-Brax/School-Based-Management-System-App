@@ -1,0 +1,36 @@
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
+runConfig:
+  minInstances: 0
+  # maxInstances: 100
+  # concurrency: 80
+  # cpu: 1
+  # memoryMiB: 512
+
+# Environment variables and secrets.
+env:
+  - variable: DATABASE_URL
+    value: "prisma+postgres://accelerate.prisma-data.net/?api_key=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlfa2V5IjoiODFmNzA4ZmItZDRkZS00YzgyLThmOGEtZDRhY2M3M2Y5MzUwIiwidGVuYW50X2lkIjoiOGY4MGE2MTMyM2U1ZjA5MzhmMzI1YjljNjlmMTBlNDQzYTM0OWNhODg0YjUzOGFmZGRhNjIyYWY4MDM4NTkwNSIsImludGVybmFsX3NlY3JldCI6ImVlMzM2YWQ2LWYwNmYtNDQ2MS05ODY2LWRjNjcwNGUzMjczNSJ9.Kel8HbW9XZJvJttBamg7zUlkRs9iy88XdRLwJh0SGh4"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    value: pk_test_dWx0aW1hdGUtbGFiLTU4LmNsZXJrLmFjY291bnRzLmRldiQ
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: CLERK_SECRET_KEY
+    value: sk_test_ELuoWy7YtBXDom482QY8jWwN1WUf3Cs63SpxaM03fX
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+    value: /
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+    value: SBMS
+    availability:
+      - BUILD
+      - RUNTIME
