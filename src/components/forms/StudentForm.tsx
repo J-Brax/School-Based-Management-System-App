@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import InputField from "../InputField";
 import Image from "next/image";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState, useTransition } from "react";
 import {
   studentSchema,
   StudentSchema,
@@ -42,6 +42,7 @@ const StudentForm = ({
   });
 
   const [img, setImg] = useState<any>();
+  const [isPending, startTransition] = useTransition();
 
   const [state, formAction] = useActionState(
     type === "create" ? createStudent : updateStudent,
@@ -54,7 +55,9 @@ const StudentForm = ({
   const onSubmit = handleSubmit((data) => {
     console.log("hello");
     console.log(data);
-    formAction({ ...data, img: img?.secure_url });
+    startTransition(() => {
+      formAction({ ...data, img: img?.secure_url });
+    });
   });
 
   const router = useRouter();
@@ -237,7 +240,7 @@ const StudentForm = ({
           >
             {grades.map((grade: { id: number; level: number }) => (
               <option value={grade.id} key={grade.id}>
-                {grade.level}
+                {grade.level === 0 ? 'Kindergarten' : `Grade ${grade.level}`}
               </option>
             ))}
           </select>

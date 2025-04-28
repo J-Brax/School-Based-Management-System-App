@@ -16,7 +16,7 @@ import {
   updateSubject,
 } from "@/lib/actions";
 import { useActionState } from "react";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -40,6 +40,7 @@ const ExamForm = ({
   });
 
   // AFTER REACT 19 IT'LL BE USEACTIONSTATE
+  const [isPending, startTransition] = useTransition();
 
   const [state, formAction] = useActionState(
     type === "create" ? createExam : updateExam,
@@ -51,7 +52,9 @@ const ExamForm = ({
 
   const onSubmit = handleSubmit((data) => {
     console.log(data);
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();

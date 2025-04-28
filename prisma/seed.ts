@@ -17,7 +17,7 @@ async function main() {
   });
 
   // GRADE
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 12; i++) {
     await prisma.grade.create({
       data: {
         level: i,

@@ -6,7 +6,7 @@ import InputField from "../InputField";
 import { assignmentSchema, AssignmentSchema } from "@/lib/formValidationSchemas";
 import { useActionState } from "react";
 import { createAssignment, updateAssignment } from "@/lib/actions";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -34,6 +34,8 @@ const AssignmentForm = ({
   });
 
   // Use the new React API in Next.js 15
+  const [isPending, startTransition] = useTransition();
+  
   const [state, formAction] = useActionState(
     type === "create" ? createAssignment : updateAssignment,
     {
@@ -43,7 +45,9 @@ const AssignmentForm = ({
   );
 
   const onSubmit = handleSubmit((data) => {
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();

@@ -66,7 +66,38 @@ const AssignmentForm = dynamic(() => import("./forms/AssignmentForm"), {
 const ResultForm = dynamic(() => import("./forms/ResultForm"), {
   loading: () => <h1>Loading...</h1>,
 });
-// TODO: OTHER FORMS
+// Create a proper fallback component with the correct props
+const AnnouncementFormFallback = ({ type, data, setOpen, relatedData }: {
+  type: "create" | "update";
+  data?: any;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+  relatedData?: any;
+}) => (
+  <div className="p-4">
+    <h3 className="text-lg font-medium mb-4">Announcement Form</h3>
+    <p>This form is being prepared. Please try again in a moment.</p>
+  </div>
+);
+
+// Set a display name to fix the ESLint warning
+AnnouncementFormFallback.displayName = "AnnouncementFormFallback";
+
+// Create a wrapper component that matches the expected interface
+const AnnouncementFormWrapper = dynamic(
+  () => import("./forms/AnnouncementForm")
+    .then(mod => mod.default)
+    .catch(err => {
+      console.error('Failed to load AnnouncementForm:', err);
+      return AnnouncementFormFallback;
+    }),
+  {
+    loading: () => <div className="p-4">Loading announcement form...</div>,
+    ssr: false
+  }
+);
+
+// Add display name to help with debugging
+AnnouncementFormWrapper.displayName = "AnnouncementFormWrapper";
 
 const forms: {
   [key: string]: (
@@ -156,6 +187,14 @@ const forms: {
       relatedData={relatedData}
     />
   ),
+  announcement: (setOpen, type, data, relatedData) => (
+    <AnnouncementFormWrapper
+      type={type}
+      data={data}
+      setOpen={setOpen}
+      relatedData={relatedData}
+    />
+  ),
   // TODO OTHER LIST ITEMS
 };
 
@@ -194,7 +233,7 @@ const FormModal = ({
 
     return type === "delete" && id ? (
       <form action={formAction} className="p-4 flex flex-col gap-4">
-        <input type="text | number" name="id" value={id} hidden />
+        <input type="text | number" name="id" value={id} readOnly hidden />
         <span className="text-center font-medium">
           All data will be lost. Are you sure you want to delete this {table}?
         </span>

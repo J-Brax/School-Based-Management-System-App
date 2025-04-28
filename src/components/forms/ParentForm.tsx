@@ -6,7 +6,7 @@ import InputField from "../InputField";
 import { parentSchema, ParentSchema } from "@/lib/formValidationSchemas";
 import { useActionState } from "react";
 import { createParent, updateParent } from "@/lib/actions";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 import { CldUploadWidget } from "next-cloudinary";
@@ -32,6 +32,7 @@ const ParentForm = ({
   });
 
   const [img, setImg] = useState<any>(data?.img ? { secure_url: data.img } : undefined);
+  const [isPending, startTransition] = useTransition();
 
   // Use the new React API in Next.js 15
   const [state, formAction] = useActionState(
@@ -43,7 +44,9 @@ const ParentForm = ({
   );
 
   const onSubmit = handleSubmit((data) => {
-    formAction({ ...data, img: img?.secure_url });
+    startTransition(() => {
+      formAction({ ...data, img: img?.secure_url });
+    });
   });
 
   const router = useRouter();

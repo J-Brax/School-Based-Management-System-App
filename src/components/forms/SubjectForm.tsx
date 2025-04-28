@@ -6,7 +6,7 @@ import InputField from "../InputField";
 import { subjectSchema, SubjectSchema } from "@/lib/formValidationSchemas";
 import { createSubject, updateSubject } from "@/lib/actions";
 import { useActionState } from "react";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +30,7 @@ const SubjectForm = ({
   });
 
   // AFTER REACT 19 IT'LL BE USEACTIONSTATE
+  const [isPending, startTransition] = useTransition();
 
   const [state, formAction] = useActionState(
     type === "create" ? createSubject : updateSubject,
@@ -41,7 +42,9 @@ const SubjectForm = ({
 
   const onSubmit = handleSubmit((data) => {
     console.log(data);
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();
@@ -86,7 +89,7 @@ const SubjectForm = ({
             multiple
             className="ring-[1.5px] ring-gray-300 p-2 rounded-md text-sm w-full"
             {...register("teachers")}
-            defaultValue={data?.teachers}
+            defaultValue={data?.teachers ? data.teachers.map((t: any) => t.id || t) : []}
           >
             {teachers.map(
               (teacher: { id: string; name: string; surname: string }) => (

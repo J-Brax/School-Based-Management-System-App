@@ -101,8 +101,16 @@ export const createClass = async (
   data: ClassSchema
 ) => {
   try {
+    // Create cleaned data object without supervisorId if it's empty
+    const cleanedData = {
+      name: data.name,
+      capacity: data.capacity,
+      gradeId: data.gradeId,
+      ...(data.supervisorId ? { supervisorId: data.supervisorId } : {})
+    };
+    
     await prisma.class.create({
-      data,
+      data: cleanedData,
     });
 
     // revalidatePath("/list/class");
@@ -118,11 +126,19 @@ export const updateClass = async (
   data: ClassSchema
 ) => {
   try {
+    // Create cleaned data object without supervisorId if it's empty
+    const cleanedData = {
+      name: data.name,
+      capacity: data.capacity,
+      gradeId: data.gradeId,
+      ...(data.supervisorId ? { supervisorId: data.supervisorId } : {})
+    };
+    
     await prisma.class.update({
       where: {
         id: data.id,
       },
-      data,
+      data: cleanedData,
     });
 
     // revalidatePath("/list/class");
@@ -153,46 +169,107 @@ export const deleteClass = async (
   }
 };
 
-export const createTeacher = async (
+export async function createTeacher(
   currentState: CurrentState,
   data: TeacherSchema
-) => {
+): Promise<{ success: boolean; error: boolean; message?: string }> {
   try {
-    // Type assertion to fix TS errors while maintaining functionality
-    const user = await (clerkClient as ClerkType).users.createUser({
+    console.log("Creating teacher with data:", {
       username: data.username,
-      password: data.password,
+      // Don't log password
       firstName: data.name,
       lastName: data.surname,
-      publicMetadata:{role:"teacher"}
+      emailAddress: data.email ? [data.email] : [],
+      hasSubjects: data.subjects && data.subjects.length > 0
     });
-
-    await prisma.teacher.create({
-      data: {
-        id: user.id,
+    
+    // Create user with clerk using the correct API for Next.js 15
+    // Initialize clerkClient properly
+    const clerk = await clerkClient();
+    
+    let user;
+    try {
+      // Using type assertion to satisfy both TypeScript and the Clerk API
+      // Use the correct parameter structure for Clerk v5.7.5
+      user = await clerk.users.createUser({
         username: data.username,
-        name: data.name,
-        surname: data.surname,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address,
-        img: data.img || null,
-        bloodType: data.bloodType,
-        sex: data.sex,
-        birthday: data.birthday,
+        password: data.password,
+        firstName: data.name,
+        lastName: data.surname,
+        // Instead of using emailAddress or email_address, use the proper structure:
+        ...(data.email ? { emailAddresses: [{ emailAddress: data.email }] } : {}),
+        publicMetadata: { role: "teacher" }
+      });
+    } catch (clerkError: any) {
+      console.error("Clerk API Error details:", clerkError);
+      
+      // Extract specific details from Clerk error
+      console.error("Clerk Error Status:", clerkError?.status);
+      console.error("Clerk Error Trace ID:", clerkError?.clerkTraceId);
+      console.error("Clerk Errors:", clerkError?.errors);
+      
+      // More user-friendly error message based on common Clerk errors
+      let errorMessage = "Something went wrong while creating the user.";
+      
+      if (clerkError?.errors && Array.isArray(clerkError.errors)) {
+        const errors = clerkError.errors.map((err: any) => ({
+          code: err.code,
+          message: err.message,
+          longMessage: err.longMessage
+        }));
+        
+        console.error("Detailed Clerk errors:", JSON.stringify(errors, null, 2));
+        
+        // Check for common errors and provide better messages
+        if (errors.some((e: any) => e.code === "form_password_pwned")) {
+          errorMessage = "This password has been compromised in a data breach. Please choose a stronger password.";
+        } else if (errors.some((e: any) => e.code === "form_identifier_exists")) {
+          errorMessage = "A user with this username or email already exists.";
+        } else if (errors.some((e: any) => e.code === "form_password_length_too_short")) {
+          errorMessage = "Password is too short. Please use at least 8 characters.";
+        } else if (errors.some((e: any) => e.code === "form_identifier_not_found")) {
+          errorMessage = "User with this identifier not found.";
+        }
+      }
+      
+      return { success: false, error: true, message: errorMessage };
+    }
+    
+    if (!user) {
+      return { success: false, error: true, message: "Failed to create user with Clerk." };
+    }
+    
+    // Create cleaned data object with subjects only if they exist
+    const teacherData = {
+      id: user.id,
+      username: data.username,
+      name: data.name,
+      surname: data.surname,
+      email: data.email || null,
+      phone: data.phone || null,
+      address: data.address,
+      img: data.img || null,
+      bloodType: data.bloodType,
+      sex: data.sex,
+      birthday: data.birthday,
+      ...(data.subjects && data.subjects.length > 0 ? {
         subjects: {
-          connect: data.subjects?.map((subjectId: string) => ({
+          connect: data.subjects.map((subjectId: string) => ({
             id: parseInt(subjectId),
           })),
-        },
-      },
+        }
+      } : {})
+    };
+    
+    await prisma.teacher.create({
+      data: teacherData,
     });
 
     // revalidatePath("/list/teachers");
     return { success: true, error: false };
-  } catch (err) {
-    console.log(err);
-    return { success: false, error: true };
+  } catch (error) {
+    console.error("Non-Clerk error creating teacher:", error);
+    return { success: false, error: true, message: "An unexpected error occurred. Please try again." };
   }
 };
 
@@ -213,28 +290,33 @@ export const updateTeacher = async (
       lastName: data.surname,
     });
 
+    // Create cleaned data object with subjects only if they exist
+    const teacherData = {
+      ...(data.password !== "" && { password: data.password }),
+      username: data.username,
+      name: data.name,
+      surname: data.surname,
+      email: data.email || null,
+      phone: data.phone || null,
+      address: data.address,
+      img: data.img || null,
+      bloodType: data.bloodType,
+      sex: data.sex,
+      birthday: data.birthday,
+      ...(data.subjects && data.subjects.length > 0 ? {
+        subjects: {
+          set: data.subjects.map((subjectId: string) => ({
+            id: parseInt(subjectId),
+          })),
+        }
+      } : {})
+    };
+    
     await prisma.teacher.update({
       where: {
         id: data.id,
       },
-      data: {
-        ...(data.password !== "" && { password: data.password }),
-        username: data.username,
-        name: data.name,
-        surname: data.surname,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address,
-        img: data.img || null,
-        bloodType: data.bloodType,
-        sex: data.sex,
-        birthday: data.birthday,
-        subjects: {
-          set: data.subjects?.map((subjectId: string) => ({
-            id: parseInt(subjectId),
-          })),
-        },
-      },
+      data: teacherData,
     });
     // revalidatePath("/list/teachers");
     return { success: true, error: false };

@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import InputField from "../InputField";
 import Image from "next/image";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState, useTransition } from "react";
 import { teacherSchema, TeacherSchema } from "@/lib/formValidationSchemas";
 import { useActionState } from "react";
 import { createTeacher, updateTeacher } from "@/lib/actions";
@@ -32,29 +32,77 @@ const TeacherForm = ({
   });
 
   const [img, setImg] = useState<any>();
+  const [isPending, startTransition] = useTransition();
 
-  const [state, formAction] = useActionState(
-    type === "create" ? createTeacher : updateTeacher,
-    {
-      success: false,
-      error: false,
-    }
-  );
+  // Replace useActionState with a simple state for error handling
+  const [state, setState] = useState({
+    success: false,
+    error: false,
+    message: "",
+    isSubmitting: false
+  });
 
   const onSubmit = handleSubmit((data) => {
-    console.log(data);
-    formAction({ ...data, img: img?.secure_url });
+    console.log('Form data being submitted:', data);
+    // Make a copy of the data to avoid modifying the original
+    const formData = { ...data };
+    
+    // Add the image if available
+    if (img?.secure_url) {
+      formData.img = img.secure_url;
+    }
+    
+    // Ensure email is properly formatted
+    if (formData.email && !formData.email.includes('@')) {
+      toast.error('Email must include @ symbol');
+      return;
+    }
+    
+    // Check password length
+    if (formData.password && formData.password.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    
+    // Try to submit the form directly using the server action
+    setState(prev => ({ ...prev, isSubmitting: true, error: false, message: "" }));
+    
+    startTransition(async () => {
+      try {
+        // Call the server action directly
+        const result = await createTeacher({ success: false, error: false }, formData);
+        
+        if (result.success) {
+          setState(prev => ({ ...prev, success: true, isSubmitting: false }));
+        } else {
+          setState(prev => ({ 
+            ...prev, 
+            error: true, 
+            isSubmitting: false, 
+            message: result.message || "An unknown error occurred"
+          }));
+        }
+      } catch (error) {
+        console.error("Error submitting form:", error);
+        setState(prev => ({ 
+          ...prev, 
+          error: true, 
+          isSubmitting: false, 
+          message: "Failed to create teacher. Please try again."
+        }));
+      }
+    });
   });
 
   const router = useRouter();
 
   useEffect(() => {
     if (state.success) {
-      toast(`Teacher has been ${type === "create" ? "created" : "updated"}!`);
+      toast.success(`Teacher has been ${type === "create" ? "created" : "updated"}!`);
       setOpen(false);
       router.refresh();
     }
-  }, [state, router, type, setOpen]);
+  }, [state.success, router, setOpen, type]);
 
   const { subjects } = relatedData;
 
@@ -74,6 +122,15 @@ const TeacherForm = ({
           register={register}
           error={errors?.username}
         />
+        {errors?.username ? (
+          <p className="text-xs text-red-400 mt-1">
+            {errors.username.message?.toString() || "Username must be unique and 3-20 characters"}
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">
+            Username must be unique and 3-20 characters
+          </p>
+        )}
         <InputField
           label="Email"
           name="email"
@@ -81,14 +138,32 @@ const TeacherForm = ({
           register={register}
           error={errors?.email}
         />
+        {errors?.email ? (
+          <p className="text-xs text-red-400 mt-1">
+            {errors.email.message?.toString() || "Email must be valid and unique"}
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">
+            Email must be valid and unique
+          </p>
+        )}
         <InputField
           label="Password"
           name="password"
-          type="password"
-          defaultValue={data?.password}
+          defaultValue=""
           register={register}
           error={errors?.password}
+          type="password"
         />
+        {errors?.password ? (
+          <p className="text-xs text-red-400 mt-1">
+            {errors.password.message?.toString() || "Password must be at least 8 characters"}
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">
+            Password must be at least 8 characters
+          </p>
+        )}
       </div>
       <span className="text-xs text-gray-400 font-medium">
         Personal Information
@@ -169,7 +244,7 @@ const TeacherForm = ({
             multiple
             className="ring-[1.5px] ring-gray-300 p-2 rounded-md text-sm w-full"
             {...register("subjects")}
-            defaultValue={data?.subjects}
+            defaultValue={data?.subjects ? data.subjects.map((s: any) => s.id || s) : []}
           >
             {subjects.map((subject: { id: number; name: string }) => (
               <option value={subject.id} key={subject.id}>
@@ -232,10 +307,35 @@ const TeacherForm = ({
         </div>
       </div>
       {state.error && (
-        <span className="text-red-500">Something went wrong!</span>
+        <div className="bg-red-50 p-3 rounded-md border border-red-200">
+          <span className="text-red-500 font-medium">Error: </span>
+          <span className="text-red-500">
+            {state.message || "Something went wrong! Please check the browser console for details."}
+            {!state.message && (
+              <>
+                <br />
+                <small>Common issues: Email format, password length, or unique username constraint.</small>
+              </>
+            )}
+          </span>
+        </div>
       )}
-      <button className="bg-blue-400 text-white p-2 rounded-md">
-        {type === "create" ? "Create" : "Update"}
+      <button 
+        type="submit" 
+        disabled={state.isSubmitting}
+        className="bg-blue-400 text-white p-2 rounded-md disabled:bg-blue-300 disabled:cursor-not-allowed"
+      >
+        {state.isSubmitting ? (
+          <span className="flex items-center justify-center">
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {type === "create" ? "Creating..." : "Updating..."}
+          </span>
+        ) : (
+          <>{type === "create" ? "Create" : "Update"}</>
+        )}
       </button>
     </form>
   );

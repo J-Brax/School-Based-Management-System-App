@@ -146,45 +146,87 @@ const TeacherListPage = async ({
     }
   }
 
-  const [data, count] = await prisma.$transaction([
-    prisma.teacher.findMany({
+  // Use try/catch to properly handle database errors
+  try {
+    // Separate count query for better performance
+    const count = await prisma.teacher.count({ where: query });
+    
+    // Optimize the main query with select instead of include where possible
+    const data = await prisma.teacher.findMany({
       where: query,
       include: {
-        subjects: true,
-        classes: true,
+        // Select only necessary fields from related data to reduce payload size
+        subjects: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
+        classes: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
       },
       take: ITEM_PER_PAGE,
       skip: ITEM_PER_PAGE * (p - 1),
-    }),
-    prisma.teacher.count({ where: query }),
-  ]);
+    });
 
-  return (
-    <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0">
-      {/* TOP */}
-      <div className="flex items-center justify-between">
-        <h1 className="hidden md:block text-lg font-semibold">All Teachers</h1>
-        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-          <TableSearch />
-          <div className="flex items-center gap-4 self-end">
-            <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow" aria-label="Filter teachers">
-              <Image src="/filter.png" alt="Filter" width={14} height={14} />
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow" aria-label="Sort teachers">
-              <Image src="/sort.png" alt="Sort" width={14} height={14} />
-            </button>
-            {role === "admin" && (
-              <FormContainer table="teacher" type="create" />
-            )}
+    return (
+      <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0">
+        {/* TOP */}
+        <div className="flex items-center justify-between">
+          <h1 className="hidden md:block text-lg font-semibold">All Teachers</h1>
+          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+            <TableSearch />
+            <div className="flex items-center gap-4 self-end">
+              <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow" aria-label="Filter teachers">
+                <Image src="/filter.png" alt="Filter" width={14} height={14} />
+              </button>
+              <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow" aria-label="Sort teachers">
+                <Image src="/sort.png" alt="Sort" width={14} height={14} />
+              </button>
+              {role === "admin" && (
+                <FormContainer table="teacher" type="create" />
+              )}
+            </div>
+          </div>
+        </div>
+        {/* LIST */}
+        <Table columns={columns} renderRow={renderRow} data={data} />
+        {/* PAGINATION */}
+        <Pagination page={p} count={count} />
+      </div>
+    );
+  } catch (error) {
+    // Log the error for debugging purposes
+    console.error("Error fetching teachers data:", error);
+    
+    // Return a user-friendly error UI
+    return (
+      <div className="bg-white p-6 rounded-md flex-1 m-4 mt-0">
+        <div className="flex flex-col items-center justify-center py-8">
+          <div className="bg-red-50 text-red-600 p-4 rounded-md mb-4 max-w-md text-center">
+            <h2 className="text-lg font-semibold mb-2">Error Loading Teachers</h2>
+            <p className="text-sm">
+              {error instanceof Error 
+                ? error.message 
+                : "There was a problem loading the teachers list. Please try again later."}
+            </p>
+          </div>
+          <div className="mt-4 flex gap-4">
+            <Link href="/" className="px-4 py-2 bg-gray-100 rounded-md text-sm hover:bg-gray-200">
+              Return to Dashboard
+            </Link>
+            <Link href="/list/teachers" className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600">
+              Try Again
+            </Link>
           </div>
         </div>
       </div>
-      {/* LIST */}
-      <Table columns={columns} renderRow={renderRow} data={data} />
-      {/* PAGINATION */}
-      <Pagination page={p} count={count} />
-    </div>
-  );
+    );
+  }
 };
 
 export default TeacherListPage;

@@ -6,7 +6,7 @@ import InputField from "../InputField";
 import { lessonSchema, LessonSchema } from "@/lib/formValidationSchemas";
 import { useActionState } from "react";
 import { createLesson, updateLesson } from "@/lib/actions";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +30,8 @@ const LessonForm = ({
   });
 
   // Use the updated React API in Next.js 15
+  const [isPending, startTransition] = useTransition();
+  
   const [state, formAction] = useActionState(
     type === "create" ? createLesson : updateLesson,
     {
@@ -39,7 +41,9 @@ const LessonForm = ({
   );
 
   const onSubmit = handleSubmit((data) => {
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();

@@ -6,7 +6,7 @@ import InputField from "../InputField";
 import { eventSchema, EventSchema } from "@/lib/formValidationSchemas";
 import { useActionState } from "react";
 import { createEvent, updateEvent } from "@/lib/actions";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -35,6 +35,8 @@ const EventForm = ({
   });
 
   // Use the new React API in Next.js 15
+  const [isPending, startTransition] = useTransition();
+  
   const [state, formAction] = useActionState(
     type === "create" ? createEvent : updateEvent,
     {
@@ -44,7 +46,9 @@ const EventForm = ({
   );
 
   const onSubmit = handleSubmit((data) => {
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();

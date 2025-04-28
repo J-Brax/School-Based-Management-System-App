@@ -16,7 +16,7 @@ import {
   updateSubject,
 } from "@/lib/actions";
 import { useActionState } from "react";
-import { Dispatch, SetStateAction, useEffect } from "react";
+import { Dispatch, SetStateAction, useEffect, useTransition } from "react";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 
@@ -40,6 +40,7 @@ const ClassForm = ({
   });
 
   // AFTER REACT 19 IT'LL BE USEACTIONSTATE
+  const [isPending, startTransition] = useTransition();
 
   const [state, formAction] = useActionState(
     type === "create" ? createClass : updateClass,
@@ -51,14 +52,16 @@ const ClassForm = ({
 
   const onSubmit = handleSubmit((data) => {
     console.log(data);
-    formAction(data);
+    startTransition(() => {
+      formAction(data);
+    });
   });
 
   const router = useRouter();
 
   useEffect(() => {
     if (state.success) {
-      toast(`Subject has been ${type === "create" ? "created" : "updated"}!`);
+      toast(`Class has been ${type === "create" ? "created" : "updated"}!`);
       setOpen(false);
       router.refresh();
     }
@@ -102,14 +105,14 @@ const ClassForm = ({
           <select
             className="ring-[1.5px] ring-gray-300 p-2 rounded-md text-sm w-full"
             {...register("supervisorId")}
-            defaultValue={data?.teachers}
+            defaultValue={data?.supervisorId || ""}
           >
+            <option value="">Select a supervisor</option>
             {teachers.map(
               (teacher: { id: string; name: string; surname: string }) => (
                 <option
                   value={teacher.id}
                   key={teacher.id}
-                  selected={data && teacher.id === data.supervisorId}
                 >
                   {teacher.name + " " + teacher.surname}
                 </option>
@@ -127,15 +130,15 @@ const ClassForm = ({
           <select
             className="ring-[1.5px] ring-gray-300 p-2 rounded-md text-sm w-full"
             {...register("gradeId")}
-            defaultValue={data?.gradeId}
+            defaultValue={data?.gradeId || ""}
           >
+            <option value="">Select a grade</option>
             {grades.map((grade: { id: number; level: number }) => (
               <option
                 value={grade.id}
                 key={grade.id}
-                selected={data && grade.id === data.gradeId}
               >
-                {grade.level}
+                {grade.level === 0 ? 'Kindergarten' : `Grade ${grade.level}`}
               </option>
             ))}
           </select>

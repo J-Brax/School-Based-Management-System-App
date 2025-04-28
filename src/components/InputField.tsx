@@ -8,6 +8,7 @@ type InputFieldProps = {
   defaultValue?: string;
   error?: FieldError;
   hidden?: boolean;
+  placeholder?: string;
   inputProps?: React.InputHTMLAttributes<HTMLInputElement>;
 };
 
