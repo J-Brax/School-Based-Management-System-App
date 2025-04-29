@@ -355,45 +355,96 @@ export const createStudent = async (
 ) => {
   console.log(data);
   try {
+    // First, check if class has capacity
     const classItem = await prisma.class.findUnique({
       where: { id: data.classId },
       include: { _count: { select: { students: true } } },
     });
 
     if (classItem && classItem.capacity === classItem._count.students) {
-      return { success: false, error: true };
+      return { success: false, error: true, message: "Class capacity has been reached. Cannot add more students." };
+    }
+    
+    // Initialize clerk client properly for Next.js 15
+    const clerk = await clerkClient();
+    
+    let user;
+    try {
+      // Use the correct parameter structure for Clerk v5.7.5
+      user = await clerk.users.createUser({
+        username: data.username,
+        password: data.password,
+        firstName: data.name,
+        lastName: data.surname,
+        // Use the correct emailAddresses format as we did for teachers
+        ...(data.email ? { emailAddresses: [{ emailAddress: data.email }] } : {}),
+        publicMetadata: { role: "student" }
+      });
+    } catch (clerkError: any) {
+      console.error("Clerk API Error details:", clerkError);
+      
+      // Extract specific details from Clerk error for better debugging
+      console.error("Clerk Error Status:", clerkError?.status);
+      console.error("Clerk Error Trace ID:", clerkError?.clerkTraceId);
+      console.error("Clerk Errors:", clerkError?.errors);
+      
+      // More user-friendly error message based on common Clerk errors
+      let errorMessage = "Something went wrong while creating the student account.";
+      
+      if (clerkError?.errors && Array.isArray(clerkError.errors)) {
+        const errors = clerkError.errors.map((err: any) => ({
+          code: err.code,
+          message: err.message,
+          longMessage: err.longMessage
+        }));
+        
+        console.error("Detailed Clerk errors:", JSON.stringify(errors, null, 2));
+        
+        // Check for common errors and provide better messages
+        if (errors.some((e: any) => e.code === "form_password_pwned")) {
+          errorMessage = "This password has been compromised in a data breach. Please choose a stronger password.";
+        } else if (errors.some((e: any) => e.code === "form_identifier_exists")) {
+          errorMessage = "A student with this username or email already exists.";
+        } else if (errors.some((e: any) => e.code === "form_password_length_too_short")) {
+          errorMessage = "Password is too short. Please use at least 8 characters.";
+        }
+      }
+      
+      return { success: false, error: true, message: errorMessage };
+    }
+    
+    if (!user) {
+      return { success: false, error: true, message: "Failed to create student account with Clerk." };
     }
 
-    // Type assertion to fix TS errors while maintaining functionality
-    const user = await (clerkClient as ClerkType).users.createUser({
-      username: data.username,
-      password: data.password,
-      firstName: data.name,
-      lastName: data.surname,
-      publicMetadata:{role:"student"}
-    });
-
-    await prisma.student.create({
-      data: {
-        id: user.id,
-        username: data.username,
-        name: data.name,
-        surname: data.surname,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address,
-        img: data.img || null,
-        bloodType: data.bloodType,
-        sex: data.sex,
-        birthday: data.birthday,
-        gradeId: data.gradeId,
-        classId: data.classId,
-        parentId: data.parentId,
-      },
-    });
-
-    // revalidatePath("/list/students");
-    return { success: true, error: false };
+    // If Clerk user creation succeeded, create the student in our database
+    try {
+      await prisma.student.create({
+        data: {
+          id: user.id,
+          username: data.username,
+          name: data.name,
+          surname: data.surname,
+          email: data.email || null,
+          phone: data.phone || null,
+          address: data.address,
+          img: data.img || null,
+          bloodType: data.bloodType,
+          sex: data.sex,
+          birthday: data.birthday,
+          gradeId: data.gradeId,
+          classId: data.classId,
+          parentId: data.parentId,
+        },
+      });
+      return { success: true, error: false, message: "Student created successfully." };
+    } catch (dbError) {
+      console.error("Database error creating student:", dbError);
+      
+      // If there was a DB error but we already created the Clerk user, we should handle this
+      // In a production system, you might want to delete the Clerk user or implement a cleanup process
+      return { success: false, error: true, message: "Error saving student details to database. Please contact support." };
+    }
   } catch (err) {
     console.log(err);
     return { success: false, error: true };
@@ -662,35 +713,81 @@ export const createParent = async (
   data: ParentSchema
 ) => {
   try {
-    // Create a parent user in Clerk
-    // Using proper Clerk client method
-    // Type assertion to fix TS errors while maintaining functionality
-    const user = await (clerkClient as ClerkType).users.createUser({
-      firstName: data.name,
-      lastName: data.surname,
-      username: data.username,
-      password: data.password,
-      emailAddresses: data.email ? [{ emailAddress: data.email }] : undefined,
-      privateMetadata: {
-        role: "parent",
-      },
-    });
+    // Initialize clerk client properly for Next.js 15
+    const clerk = await clerkClient();
+    
+    let user;
+    try {
+      // Use the correct parameter structure for Clerk v5.7.5
+      user = await clerk.users.createUser({
+        username: data.username,
+        password: data.password,
+        firstName: data.name,
+        lastName: data.surname,
+        // Use the correct emailAddresses format as we did for teachers
+        ...(data.email ? { emailAddresses: [{ emailAddress: data.email }] } : {}),
+        publicMetadata: { role: "parent" } // Changed from privateMetadata to be consistent
+      });
+    } catch (clerkError: any) {
+      console.error("Clerk API Error details:", clerkError);
+      
+      // Extract specific details from Clerk error for better debugging
+      console.error("Clerk Error Status:", clerkError?.status);
+      console.error("Clerk Error Trace ID:", clerkError?.clerkTraceId);
+      console.error("Clerk Errors:", clerkError?.errors);
+      
+      // More user-friendly error message based on common Clerk errors
+      let errorMessage = "Something went wrong while creating the parent account.";
+      
+      if (clerkError?.errors && Array.isArray(clerkError.errors)) {
+        const errors = clerkError.errors.map((err: any) => ({
+          code: err.code,
+          message: err.message,
+          longMessage: err.longMessage
+        }));
+        
+        console.error("Detailed Clerk errors:", JSON.stringify(errors, null, 2));
+        
+        // Check for common errors and provide better messages
+        if (errors.some((e: any) => e.code === "form_password_pwned")) {
+          errorMessage = "This password has been compromised in a data breach. Please choose a stronger password.";
+        } else if (errors.some((e: any) => e.code === "form_identifier_exists")) {
+          errorMessage = "A parent with this username or email already exists.";
+        } else if (errors.some((e: any) => e.code === "form_password_length_too_short")) {
+          errorMessage = "Password is too short. Please use at least 8 characters.";
+        }
+      }
+      
+      return { success: false, error: true, message: errorMessage };
+    }
+    
+    if (!user) {
+      return { success: false, error: true, message: "Failed to create parent account with Clerk." };
+    }
 
     // Create the parent in our database
-    await prisma.parent.create({
-      data: {
-        id: user.id,
-        username: data.username,
-        name: data.name,
-        surname: data.surname,
-        email: data.email || undefined,
-        phone: data.phone,
-        address: data.address,
-      },
-    });
-
-    revalidatePath("/list/parents");
-    return { success: true, error: false };
+    try {
+      await prisma.parent.create({
+        data: {
+          id: user.id,
+          username: data.username,
+          name: data.name,
+          surname: data.surname,
+          email: data.email || null, // Changed from undefined to null for consistency
+          phone: data.phone,
+          address: data.address,
+        },
+      });
+      
+      revalidatePath("/list/parents");
+      return { success: true, error: false, message: "Parent account created successfully." };
+    } catch (dbError) {
+      console.error("Database error creating parent:", dbError);
+      
+      // If there was a DB error but we already created the Clerk user, we should handle this
+      // In a production system, you might want to delete the Clerk user or implement a cleanup process
+      return { success: false, error: true, message: "Error saving parent details to database. Please contact support." };
+    }
   } catch (error) {
     console.log(error);
     return { success: false, error: true };
