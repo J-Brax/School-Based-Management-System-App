@@ -199,11 +199,14 @@ const StudentForm = ({
           type="date"
         />
         <InputField
-          label="Parent Id"
+          label="Parent Id (Optional)"
           name="parentId"
           defaultValue={data?.parentId}
           register={register}
           error={errors.parentId}
+          inputProps={{ 
+            placeholder: "Leave empty if no parent assigned"
+          }}
         />
         {data && (
           <InputField
