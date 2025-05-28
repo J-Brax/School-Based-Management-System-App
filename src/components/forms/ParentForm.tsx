@@ -33,6 +33,7 @@ const ParentForm = ({
 
   const [img, setImg] = useState<any>(data?.img ? { secure_url: data.img } : undefined);
   const [isPending, startTransition] = useTransition();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Use the new React API in Next.js 15
   const [state, formAction] = useActionState(
@@ -44,8 +45,29 @@ const ParentForm = ({
   );
 
   const onSubmit = handleSubmit((data) => {
-    startTransition(() => {
-      formAction({ ...data, img: img?.secure_url });
+    // Clear any previous error messages
+    setErrorMessage(null);
+    
+    startTransition(async () => {
+      try {
+        // Call the server action directly to get detailed error messages
+        const result = await (type === "create" ? createParent : updateParent)(
+          { success: false, error: false },
+          { ...data, img: img?.secure_url }
+        ) as { success: boolean; error: boolean; message?: string };
+        
+        if (result.error && result.message) {
+          // Set detailed error message if available
+          setErrorMessage(result.message);
+        } else if (result.success) {
+          toast(`Parent has been ${type === "create" ? "created" : "updated"}!`);
+          setOpen(false);
+          router.refresh();
+        }
+      } catch (err) {
+        console.error("Error submitting parent form:", err);
+        setErrorMessage("An unexpected error occurred. Please try again.");
+      }
     });
   });
 
@@ -169,11 +191,24 @@ const ParentForm = ({
           />
         )}
       </div>
-      {state.error && (
-        <span className="text-red-500">Something went wrong!</span>
+      {errorMessage && (
+        <div className="p-4 mb-4 bg-red-50 border border-red-200 rounded-md">
+          <span className="text-red-600">{errorMessage}</span>
+        </div>
       )}
-      <button className="bg-blue-400 text-white p-2 rounded-md">
-        {type === "create" ? "Create" : "Update"}
+      {isPending && (
+        <div className="p-4 mb-4 bg-blue-50 border border-blue-200 rounded-md">
+          <span className="text-blue-600">Processing your request...</span>
+        </div>
+      )}
+      <button 
+        type="submit" 
+        className="bg-blue-400 text-white p-2 rounded-md hover:bg-blue-500 disabled:bg-blue-300"
+        disabled={isPending}
+      >
+        {isPending 
+          ? (type === "create" ? "Creating..." : "Updating...") 
+          : (type === "create" ? "Create" : "Update")}
       </button>
     </form>
   );

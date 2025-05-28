@@ -43,20 +43,41 @@ const StudentForm = ({
 
   const [img, setImg] = useState<any>();
   const [isPending, startTransition] = useTransition();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [state, formAction] = useActionState(
     type === "create" ? createStudent : updateStudent,
     {
       success: false,
-      error: false,
+      error: false
     }
   );
 
   const onSubmit = handleSubmit((data) => {
-    console.log("hello");
-    console.log(data);
-    startTransition(() => {
-      formAction({ ...data, img: img?.secure_url });
+    // Clear any previous error messages
+    setErrorMessage(null);
+    
+    startTransition(async () => {
+      try {
+        // Call the server action directly to get detailed error messages
+        // Add type assertion to fix TypeScript errors
+        const result = await (type === "create" ? createStudent : updateStudent)(
+          { success: false, error: false },
+          { ...data, img: img?.secure_url }
+        ) as { success: boolean; error: boolean; message?: string };
+        
+        if (result.error && result.message) {
+          // Set detailed error message if available
+          setErrorMessage(result.message);
+        } else if (result.success) {
+          toast(`Student has been ${type === "create" ? "created" : "updated"}!`);
+          setOpen(false);
+          router.refresh();
+        }
+      } catch (err) {
+        console.error("Error submitting student form:", err);
+        setErrorMessage("An unexpected error occurred. Please try again.");
+      }
     });
   });
 
@@ -198,16 +219,7 @@ const StudentForm = ({
           error={errors.birthday}
           type="date"
         />
-        <InputField
-          label="Parent Id (Optional)"
-          name="parentId"
-          defaultValue={data?.parentId}
-          register={register}
-          error={errors.parentId}
-          inputProps={{ 
-            placeholder: "Leave empty if no parent assigned"
-          }}
-        />
+        {/* Parent ID field removed as requested */}
         {data && (
           <InputField
             label="Id"
@@ -282,11 +294,24 @@ const StudentForm = ({
           )}
         </div>
       </div>
-      {state.error && (
-        <span className="text-red-500">Something went wrong!</span>
+      {errorMessage && (
+        <div className="p-4 mb-4 bg-red-50 border border-red-200 rounded-md">
+          <span className="text-red-600">{errorMessage}</span>
+        </div>
       )}
-      <button type="submit" className="bg-blue-400 text-white p-2 rounded-md">
-        {type === "create" ? "Create" : "Update"}
+      {isPending && (
+        <div className="p-4 mb-4 bg-blue-50 border border-blue-200 rounded-md">
+          <span className="text-blue-600">Processing your request...</span>
+        </div>
+      )}
+      <button 
+        type="submit" 
+        className="bg-blue-400 text-white p-2 rounded-md hover:bg-blue-500 disabled:bg-blue-300"
+        disabled={isPending}
+      >
+        {isPending 
+          ? (type === "create" ? "Creating..." : "Updating...") 
+          : (type === "create" ? "Create" : "Update")}
       </button>
     </form>
   );

@@ -1,5 +1,6 @@
 "use server";
 
+import prisma from "./prisma";
 import { revalidatePath } from "next/cache";
 import {
   AssignmentSchema,
@@ -13,7 +14,7 @@ import {
   SubjectSchema,
   TeacherSchema,
 } from "./formValidationSchemas";
-import prisma from "./prisma";
+import { Prisma } from "@prisma/client";
 import { auth } from "@clerk/nextjs/server";
 import { clerkClient } from "@clerk/nextjs/server";
 
@@ -352,102 +353,176 @@ export const deleteTeacher = async (
 export const createStudent = async (
   currentState: CurrentState,
   data: StudentSchema
-) => {
-  console.log(data);
-  try {
-    // First, check if class has capacity
-    const classItem = await prisma.class.findUnique({
-      where: { id: data.classId },
-      include: { _count: { select: { students: true } } },
-    });
+): Promise<{ success: boolean; error: boolean; message?: string }> => {
+  console.log("Student creation data:", {
+    username: data.username,
+    name: data.name,
+    surname: data.surname,
+    email: data.email ? "provided" : "not provided",
+    classId: data.classId,
+    gradeId: data.gradeId
+  });
 
-    if (classItem && classItem.capacity === classItem._count.students) {
-      return { success: false, error: true, message: "Class capacity has been reached. Cannot add more students." };
-    }
-    
-    // Initialize clerk client properly for Next.js 15
+  try {
+    // Initialize Clerk client
     const clerk = await clerkClient();
-    
+
+    // First, verify the class exists and has capacity
+    try {
+      const classItem = await prisma.class.findUnique({
+        where: { id: Number(data.classId) },
+        include: { _count: { select: { students: true } } },
+      });
+
+      if (!classItem) {
+        return { 
+          success: false, 
+          error: true, 
+          message: "The selected class does not exist. Please select a valid class." 
+        };
+      }
+
+      if (classItem.capacity <= classItem._count.students) {
+        return { 
+          success: false, 
+          error: true, 
+          message: "Class capacity has been reached. Please select a different class." 
+        };
+      }
+
+      // Verify the grade exists
+      const gradeExists = await prisma.grade.findUnique({
+        where: { id: Number(data.gradeId) }
+      });
+
+      if (!gradeExists) {
+        return { 
+          success: false, 
+          error: true, 
+          message: "The selected grade does not exist. Please select a valid grade." 
+        };
+      }
+    } catch (dbCheckError) {
+      console.error("Error checking class/grade:", dbCheckError);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Error verifying class and grade information. Please try again." 
+      };
+    }
+
+    // Now create the Clerk user
     let user;
     try {
-      // Use the correct parameter structure for Clerk v5.7.5
       user = await clerk.users.createUser({
         username: data.username,
         password: data.password,
         firstName: data.name,
         lastName: data.surname,
-        // Use the correct emailAddresses format as we did for teachers
         ...(data.email ? { emailAddresses: [{ emailAddress: data.email }] } : {}),
         publicMetadata: { role: "student" }
       });
     } catch (clerkError: any) {
-      console.error("Clerk API Error details:", clerkError);
+      console.error("Clerk API Error:", clerkError);
       
-      // Extract specific details from Clerk error for better debugging
-      console.error("Clerk Error Status:", clerkError?.status);
-      console.error("Clerk Error Trace ID:", clerkError?.clerkTraceId);
-      console.error("Clerk Errors:", clerkError?.errors);
-      
-      // More user-friendly error message based on common Clerk errors
-      let errorMessage = "Something went wrong while creating the student account.";
-      
+      // Extract specific details from Clerk error for better error messages
       if (clerkError?.errors && Array.isArray(clerkError.errors)) {
-        const errors = clerkError.errors.map((err: any) => ({
-          code: err.code,
-          message: err.message,
-          longMessage: err.longMessage
-        }));
-        
-        console.error("Detailed Clerk errors:", JSON.stringify(errors, null, 2));
-        
-        // Check for common errors and provide better messages
-        if (errors.some((e: any) => e.code === "form_password_pwned")) {
-          errorMessage = "This password has been compromised in a data breach. Please choose a stronger password.";
-        } else if (errors.some((e: any) => e.code === "form_identifier_exists")) {
-          errorMessage = "A student with this username or email already exists.";
-        } else if (errors.some((e: any) => e.code === "form_password_length_too_short")) {
-          errorMessage = "Password is too short. Please use at least 8 characters.";
+        for (const err of clerkError.errors) {
+          if (err.code === "form_identifier_exists") {
+            return { 
+              success: false, 
+              error: true, 
+              message: "A user with this username already exists. Please choose a different username." 
+            };
+          }
+          if (err.code === "form_password_pwned") {
+            return { 
+              success: false, 
+              error: true, 
+              message: "This password has been compromised in a data breach. Please choose a more secure password." 
+            };
+          }
+          if (err.code === "form_password_validation_failed") {
+            return { 
+              success: false, 
+              error: true, 
+              message: "Password is too short. Please use at least 8 characters." 
+            };
+          }
         }
       }
       
-      return { success: false, error: true, message: errorMessage };
-    }
-    
-    if (!user) {
-      return { success: false, error: true, message: "Failed to create student account with Clerk." };
+      return { 
+        success: false, 
+        error: true, 
+        message: "Error creating user account. Please try again with different credentials." 
+      };
     }
 
-    // If Clerk user creation succeeded, create the student in our database
+    // If we got here, the Clerk user was created successfully
+    // Now create the student in our database with a more direct approach
     try {
+      // Create a simplified data object with the minimum required fields
       await prisma.student.create({
         data: {
           id: user.id,
           username: data.username,
           name: data.name,
           surname: data.surname,
-          email: data.email || null,
-          phone: data.phone || null,
           address: data.address,
-          img: data.img || null,
           bloodType: data.bloodType,
           sex: data.sex,
           birthday: data.birthday,
-          gradeId: data.gradeId,
-          classId: data.classId,
-          parentId: data.parentId,
-        },
+          // Use direct IDs rather than connect for simplicity
+          gradeId: Number(data.gradeId),
+          classId: Number(data.classId),
+          // Only add optional fields if they exist
+          ...(data.email ? { email: data.email } : {}),
+          ...(data.phone ? { phone: data.phone } : {}),
+          ...(data.img ? { img: data.img } : {})
+        }
       });
-      return { success: true, error: false, message: "Student created successfully." };
-    } catch (dbError) {
+
+      return { 
+        success: true, 
+        error: false, 
+        message: "Student created successfully." 
+      };
+    } catch (dbError: any) {
       console.error("Database error creating student:", dbError);
       
-      // If there was a DB error but we already created the Clerk user, we should handle this
-      // In a production system, you might want to delete the Clerk user or implement a cleanup process
-      return { success: false, error: true, message: "Error saving student details to database. Please contact support." };
+      // Clean up the Clerk user since database creation failed
+      try {
+        await clerk.users.deleteUser(user.id);
+        console.log(`Cleaned up Clerk user ${user.id} after database error`);
+      } catch (cleanupError) {
+        console.error("Error cleaning up Clerk user:", cleanupError);
+      }
+
+      // Provide specific error messages based on the error code
+      if (dbError.code === "P2002") {
+        const field = dbError.meta && dbError.meta.target ? 
+          String(dbError.meta.target[0]) : "field";
+        return { 
+          success: false, 
+          error: true, 
+          message: `A student with this ${field} already exists. Please use a different ${field}.` 
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: true, 
+        message: "Error saving student details to database. Please try again later." 
+      };
     }
   } catch (err) {
-    console.log(err);
-    return { success: false, error: true };
+    console.error("Unexpected error in student creation:", err);
+    return { 
+      success: false, 
+      error: true, 
+      message: "An unexpected error occurred. Please try again." 
+    };
   }
 };
 
@@ -458,6 +533,7 @@ export const updateStudent = async (
   if (!data.id) {
     return { success: false, error: true };
   }
+  
   try {
     // Type assertion to fix TS errors while maintaining functionality
     const user = await (clerkClient as ClerkType).users.getUser(data.id);
@@ -468,26 +544,29 @@ export const updateStudent = async (
       lastName: data.surname,
     });
 
+    // Create update data without the parentId field (since it's removed from the form)
+    const updateData = {
+      ...(data.password !== "" && { password: data.password }),
+      username: data.username,
+      name: data.name,
+      surname: data.surname,
+      email: data.email || null,
+      phone: data.phone || null,
+      address: data.address,
+      img: data.img || null,
+      bloodType: data.bloodType,
+      sex: data.sex,
+      birthday: data.birthday,
+      gradeId: data.gradeId,
+      classId: data.classId,
+      // parentId is now removed from student creation, but we keep it for existing students
+    };
+
     await prisma.student.update({
       where: {
         id: data.id,
       },
-      data: {
-        ...(data.password !== "" && { password: data.password }),
-        username: data.username,
-        name: data.name,
-        surname: data.surname,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address,
-        img: data.img || null,
-        bloodType: data.bloodType,
-        sex: data.sex,
-        birthday: data.birthday,
-        gradeId: data.gradeId,
-        classId: data.classId,
-        parentId: data.parentId,
-      },
+      data: updateData,
     });
     // revalidatePath("/list/students");
     return { success: true, error: false };
