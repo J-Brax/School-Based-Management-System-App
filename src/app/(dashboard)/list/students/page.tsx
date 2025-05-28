@@ -5,13 +5,13 @@ import TableSearch from "@/components/TableSearch";
 
 import prisma from "@/lib/prisma";
 import { ITEM_PER_PAGE } from "@/lib/settings";
-import { Class, Prisma, Student } from "@prisma/client";
+import { Class, Grade, Prisma, Student } from "@prisma/client";
 import Image from "next/image";
 import Link from "next/link";
 
 import { auth } from "@clerk/nextjs/server";
 
-type StudentList = Student & { class: Class };
+type StudentList = Student & { class: Class; grade: Grade };
 
 const StudentListPage = async ({
   searchParams,
@@ -72,12 +72,12 @@ const StudentListPage = async ({
           className="md:hidden xl:block w-10 h-10 rounded-full object-cover"
         />
         <div className="flex flex-col">
-          <h3 className="font-semibold">{item.name}</h3>
+          <h3 className="font-semibold">{item.name} {item.surname}</h3>
           <p className="text-xs text-gray-500">{item.class.name}</p>
         </div>
       </td>
       <td className="hidden md:table-cell">{item.username}</td>
-      <td className="hidden md:table-cell">{item.class.name[0]}</td>
+      <td className="hidden md:table-cell">{item.grade.level === 0 ? 'Kindergarten' : `Grade ${item.grade.level}`}</td>
       <td className="hidden md:table-cell">{item.phone}</td>
       <td className="hidden md:table-cell">{item.address}</td>
       <td>
@@ -147,6 +147,7 @@ const StudentListPage = async ({
       where: query,
       include: {
         class: true,
+        grade: true,
       },
       take: ITEM_PER_PAGE,
       skip: ITEM_PER_PAGE * (p - 1),
