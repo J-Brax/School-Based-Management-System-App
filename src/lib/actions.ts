@@ -23,7 +23,7 @@ type ClerkType = typeof clerkClient & {
   users: {
     createUser: Function;
     getUser: Function;
-    deleteUser: Function;
+    deleteUser: (userId: string) => Promise<any>;
   };
 };
 
@@ -327,26 +327,119 @@ export const updateTeacher = async (
   }
 };
 
+
+
 export const deleteTeacher = async (
   currentState: CurrentState,
   data: FormData
 ) => {
-  const id = data.get("id") as string;
   try {
-    // Type assertion to fix TS errors while maintaining functionality
-    await (clerkClient as ClerkType).users.deleteUser(id);
-
-    await prisma.teacher.delete({
-      where: {
-        id: id,
+    console.log('Delete teacher function received data:', Object.fromEntries(data.entries()));
+    
+    // Extract and validate ID
+    const id = data.get("id");
+    console.log('ID extracted from form data:', id, typeof id);
+    
+    if (!id || typeof id !== 'string') {
+      console.error('Invalid ID received for teacher deletion:', id);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Invalid teacher ID provided" 
+      };
+    }
+    
+    // First find the teacher to ensure it exists
+    console.log('Finding teacher with ID:', id);
+    const teacher = await prisma.teacher.findUnique({
+      where: { id },
+      include: { 
+        classes: true,  // Check if supervising any classes
+        lessons: true,  // Check if teaching any lessons
+        subjects: true  // Check if teaching any subjects
       },
     });
 
-    // revalidatePath("/list/teachers");
+    if (!teacher) {
+      console.log('Teacher not found with ID:', id);
+      return { success: false, error: true, message: "Teacher not found" };
+    }
+    
+    console.log('Found teacher:', JSON.stringify(teacher, null, 2));
+
+    // Check if teacher is supervising any classes - this is a blocker for deletion
+    if (teacher.classes.length > 0) {
+      console.log(`Teacher is supervising ${teacher.classes.length} classes, cannot delete`);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Cannot delete teacher who is supervising classes. Please reassign classes first." 
+      };
+    }
+    
+    // Delete related records first if needed
+    if (teacher.lessons.length > 0) {
+      console.log(`Teacher has ${teacher.lessons.length} lessons, consider reassignment`);
+      // Note: In this case, we're allowing deletion even with lessons
+      // Alternatively, we could block deletion here and require reassignment first
+    }
+    
+    // Check for any subjects that may be impacted
+    if (teacher.subjects.length > 0) {
+      console.log(`Teacher has ${teacher.subjects.length} subjects assigned`);
+      // Note: For now, we're allowing deletion even with subjects assigned
+      // In a production environment, you might want to reassign these first
+    }
+
+    // Delete from database
+    console.log('Deleting teacher from database...');
+    await prisma.teacher.delete({
+      where: { id },
+    });
+    console.log('Teacher deleted from database successfully');
+
+    try {
+      console.log('Attempting to delete user from Clerk...');
+      // Then try to delete from Clerk
+      await (clerkClient as ClerkType).users.deleteUser(id);
+      console.log('Clerk user deleted successfully');
+    } catch (clerkError) {
+      console.error('Error deleting Clerk user:', clerkError);
+      // Continue even if Clerk deletion fails - the database record is gone
+    }
+
+    revalidatePath("/list/teachers");
+    console.log('Delete teacher operation completed successfully');
     return { success: true, error: false };
   } catch (err) {
-    console.log(err);
-    return { success: false, error: true };
+    console.error('Error deleting teacher:', err);
+    
+    let errorMessage = 'Failed to delete teacher';
+    
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      errorMessage = `Database error (${err.code}): `;
+      
+      // Provide more specific error messages based on error code
+      if (err.code === 'P2003') {
+        errorMessage += 'This teacher has related records that prevent deletion. Please reassign their responsibilities first.';
+      } else if (err.code === 'P2025') {
+        errorMessage += 'Teacher record not found.';
+      } else if (err.code === 'P2018') {
+        errorMessage += 'Required related record not found.';
+      } else {
+        errorMessage += err.message;
+      }
+    } else if (err instanceof Error) {
+      errorMessage += `: ${err.message}`;
+    }
+    
+    console.error('Final error message:', errorMessage);
+    
+    return { 
+      success: false, 
+      error: true, 
+      message: errorMessage
+    };
   }
 };
 
@@ -580,22 +673,98 @@ export const deleteStudent = async (
   currentState: CurrentState,
   data: FormData
 ) => {
-  const id = data.get("id") as string;
   try {
-    // Type assertion to fix TS errors while maintaining functionality
-    await (clerkClient as ClerkType).users.deleteUser(id);
-
-    await prisma.student.delete({
-      where: {
-        id: id,
-      },
+    console.log('Delete student function received data:', Object.fromEntries(data.entries()));
+    
+    // Extract and validate ID
+    const id = data.get("id");
+    console.log('ID extracted from form data:', id, typeof id);
+    
+    if (!id || typeof id !== 'string') {
+      console.error('Invalid ID received for student deletion:', id);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Invalid student ID provided" 
+      };
+    }
+    
+    // First find the student to ensure it exists
+    console.log('Finding student with ID:', id);
+    const student = await prisma.student.findUnique({
+      where: { id },
+      include: { parent: true, results: true, attendances: true } // Include related records to check constraints
     });
 
-    // revalidatePath("/list/students");
+    if (!student) {
+      console.log('Student not found with ID:', id);
+      return { success: false, error: true, message: "Student not found" };
+    }
+    
+    console.log('Found student:', JSON.stringify(student, null, 2));
+
+    // Delete related records first if needed
+    if (student.results.length > 0) {
+      console.log(`Deleting ${student.results.length} results for student`);
+      await prisma.result.deleteMany({
+        where: { studentId: id },
+      });
+    }
+    
+    if (student.attendances.length > 0) {
+      console.log(`Deleting ${student.attendances.length} attendance records for student`);
+      await prisma.attendance.deleteMany({
+        where: { studentId: id },
+      });
+    }
+
+    // Delete from database
+    console.log('Deleting student from database...');
+    await prisma.student.delete({
+      where: { id },
+    });
+    console.log('Student deleted from database successfully');
+
+    try {
+      console.log('Attempting to delete user from Clerk...');
+      // Then try to delete from Clerk
+      await (clerkClient as ClerkType).users.deleteUser(id);
+      console.log('Clerk user deleted successfully');
+    } catch (clerkError) {
+      console.error('Error deleting Clerk user:', clerkError);
+      // Continue even if Clerk deletion fails - the database record is gone
+    }
+
+    revalidatePath("/list/students");
+    console.log('Delete student operation completed successfully');
     return { success: true, error: false };
   } catch (err) {
-    console.log(err);
-    return { success: false, error: true };
+    console.error('Error deleting student:', err);
+    
+    let errorMessage = 'Failed to delete student';
+    
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      errorMessage = `Database error (${err.code}): `;
+      
+      // Provide more specific error messages based on error code
+      if (err.code === 'P2003') {
+        errorMessage += 'This student has related records that prevent deletion.';
+      } else if (err.code === 'P2025') {
+        errorMessage += 'Student record not found.';
+      } else {
+        errorMessage += err.message;
+      }
+    } else if (err instanceof Error) {
+      errorMessage += `: ${err.message}`;
+    }
+    
+    console.error('Final error message:', errorMessage);
+    
+    return { 
+      success: false, 
+      error: true, 
+      message: errorMessage
+    };
   }
 };
 
@@ -919,28 +1088,101 @@ export const updateParent = async (
 
 export const deleteParent = async (currentState: CurrentState, data: FormData) => {
   try {
-    const id = data.get("id") as string;
+    console.log('Delete parent function received data:', Object.fromEntries(data.entries()));
+    
+    // Extract and validate ID
+    const id = data.get("id");
+    console.log('ID extracted from form data:', id, typeof id);
+    
+    if (!id || typeof id !== 'string') {
+      console.error('Invalid ID received for parent deletion:', id);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Invalid parent ID provided" 
+      };
+    }
+    
+    // Verify admin role
     const { userId, sessionClaims } = await auth();
     const role = (sessionClaims?.metadata as { role?: string })?.role;
 
-    if (!id || role !== "admin") {
-      return { success: false, error: true };
+    if (role !== "admin") {
+      console.log('Unauthorized deletion attempt by non-admin role:', role);
+      return { success: false, error: true, message: "Only admins can delete parents" };
     }
 
-    await prisma.parent.delete({
-      where: {
-        id,
-      },
+    // First find the parent to ensure it exists
+    console.log('Finding parent with ID:', id);
+    const parent = await prisma.parent.findUnique({
+      where: { id },
+      include: { students: true },
     });
 
-    // Type assertion to fix TS errors while maintaining functionality
-    await (clerkClient as ClerkType).users.deleteUser(id);
+    if (!parent) {
+      console.log('Parent not found with ID:', id);
+      return { success: false, error: true, message: "Parent not found" };
+    }
+    
+    console.log('Found parent:', JSON.stringify(parent, null, 2));
+
+    // Check if parent has any linked students
+    if (parent.students.length > 0) {
+      console.log(`Parent has ${parent.students.length} students linked, cannot delete`);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Cannot delete parent with linked students. Please unlink or reassign students first." 
+      };
+    }
+
+    // Delete from database
+    console.log('Deleting parent from database...');
+    await prisma.parent.delete({
+      where: { id },
+    });
+    console.log('Parent deleted from database successfully');
+
+    try {
+      console.log('Attempting to delete user from Clerk...');
+      // Then try to delete from Clerk
+      await (clerkClient as ClerkType).users.deleteUser(id);
+      console.log('Clerk user deleted successfully');
+    } catch (clerkError) {
+      console.error('Error deleting Clerk user:', clerkError);
+      // Continue even if Clerk deletion fails - the database record is gone
+    }
 
     revalidatePath("/list/parents");
+    console.log('Delete parent operation completed successfully');
     return { success: true, error: false };
-  } catch (error) {
-    console.log(error);
-    return { success: false, error: true };
+  } catch (err) {
+    console.error('Error deleting parent:', err);
+    
+    let errorMessage = 'Failed to delete parent';
+    
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      errorMessage = `Database error (${err.code}): `;
+      
+      // Provide more specific error messages based on error code
+      if (err.code === 'P2003') {
+        errorMessage += 'This parent has related records that prevent deletion. Please reassign or remove students first.';
+      } else if (err.code === 'P2025') {
+        errorMessage += 'Parent record not found.';
+      } else {
+        errorMessage += err.message;
+      }
+    } else if (err instanceof Error) {
+      errorMessage += `: ${err.message}`;
+    }
+    
+    console.error('Final error message:', errorMessage);
+    
+    return { 
+      success: false, 
+      error: true, 
+      message: errorMessage
+    };
   }
 };
 

@@ -6,6 +6,11 @@ import {
   deleteStudent,
   deleteSubject,
   deleteTeacher,
+  deleteParent,
+  deleteLesson,
+  deleteAssignment,
+  deleteResult,
+  deleteEvent,
 } from "@/lib/actions";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -21,14 +26,14 @@ const deleteActionMap = {
   teacher: deleteTeacher,
   student: deleteStudent,
   exam: deleteExam,
-// TODO: OTHER DELETE ACTIONS
-  parent: deleteSubject,
-  lesson: deleteSubject,
-  assignment: deleteSubject,
-  result: deleteSubject,
-  attendance: deleteSubject,
-  event: deleteSubject,
-  announcement: deleteSubject,
+  parent: deleteParent,
+  lesson: deleteLesson,
+  assignment: deleteAssignment,
+  result: deleteResult,
+  event: deleteEvent,
+  // Comment out non-implemented actions rather than mapping to wrong function
+  // attendance: null, // Not implemented yet
+  // announcement: null, // Not implemented yet
 };
 
 // USE LAZY LOADING
@@ -216,31 +221,55 @@ const FormModal = ({
   const [open, setOpen] = useState(false);
 
   const Form = () => {
-    const [state, formAction] = useActionState(deleteActionMap[table], {
-      success: false,
-      error: false,
-    });
-
     const router = useRouter();
-
-    useEffect(() => {
-      if (state.success) {
-        toast(`${table} has been deleted!`);
-        setOpen(false);
-        router.refresh();
+    
+    // Check if the delete action exists for this table type
+    const deleteAction = deleteActionMap[table as keyof typeof deleteActionMap];
+    
+    // Create a client action that will trigger the server action
+    const handleDelete = async (formData: FormData) => {
+      try {
+        // Add client-side debugging
+        console.log(`Deleting ${table} with ID:`, id);
+        
+        if (!deleteAction) {
+          console.error(`No delete action implemented for ${table}`);
+          toast.error(`Delete action not implemented for ${table}`);
+          return;
+        }
+        
+        // Call the server action directly
+        const result = await deleteAction({success: false, error: false}, formData);
+        console.log('Delete result:', result);
+        
+        if (result.success) {
+          toast.success(`${table} has been deleted!`);
+          setOpen(false);
+          router.refresh();
+        } else if (result.error && 'message' in result && result.message) {
+          toast.error(result.message as string);
+        }
+      } catch (error) {
+        console.error('Error during delete operation:', error);
+        toast.error(`Failed to delete ${table}. Please try again.`);
       }
-    }, [state, router]);
+    };
 
     return type === "delete" && id ? (
-      <form action={formAction} className="p-4 flex flex-col gap-4">
-        <input type="text | number" name="id" value={id} readOnly hidden />
+      <div className="p-4 flex flex-col gap-4">
         <span className="text-center font-medium">
           All data will be lost. Are you sure you want to delete this {table}?
         </span>
-        <button className="bg-red-700 text-white py-2 px-4 rounded-md border-none w-max self-center">
-          Delete
-        </button>
-      </form>
+        <form action={handleDelete} className="flex justify-center">
+          <input type="hidden" name="id" value={id.toString()} />
+          <button 
+            type="submit" 
+            className="bg-red-700 text-white py-2 px-4 rounded-md border-none hover:bg-red-800 transition-colors"
+          >
+            Delete
+          </button>
+        </form>
+      </div>
     ) : type === "create" || type === "update" ? (
       forms[table](setOpen, type, data, relatedData)
     ) : (
