@@ -229,46 +229,152 @@ const FormModal = ({
     // Create a client action that will trigger the server action
     const handleDelete = async (formData: FormData) => {
       try {
-        // Add client-side debugging
-        console.log(`Deleting ${table} with ID:`, id);
+        // Enhanced client-side debugging
+        console.log(`[DELETE DEBUG] Started deletion for ${table} with ID:`, id);
+        console.log(`[DELETE DEBUG] Type of ID:`, typeof id);
         
         if (!deleteAction) {
-          console.error(`No delete action implemented for ${table}`);
+          console.error(`[DELETE DEBUG] No delete action implemented for ${table}`);
           toast.error(`Delete action not implemented for ${table}`);
           return;
         }
         
+        // Make sure ID is added to the form data
+        formData.set('id', id!.toString());
+        
+        // Log form data for debugging
+        console.log('[DELETE DEBUG] Form data entries:', [...formData.entries()]);
+        console.log(`[DELETE DEBUG] Using action:`, deleteAction.name || 'unnamed function');
+        
         // Call the server action directly
+        console.log('[DELETE DEBUG] Calling server action...');
         const result = await deleteAction({success: false, error: false}, formData);
-        console.log('Delete result:', result);
+        console.log('[DELETE DEBUG] Delete result:', result);
         
         if (result.success) {
+          console.log('[DELETE DEBUG] Delete operation successful');
           toast.success(`${table} has been deleted!`);
           setOpen(false);
           router.refresh();
         } else if (result.error && 'message' in result && result.message) {
+          console.error('[DELETE DEBUG] Server returned error:', result.message);
           toast.error(result.message as string);
+        } else {
+          console.error('[DELETE DEBUG] Server returned unknown error state:', result);
+          toast.error(`Failed to delete ${table} due to an unknown error.`);
         }
       } catch (error) {
-        console.error('Error during delete operation:', error);
+        console.error('[DELETE DEBUG] Exception during delete operation:', error);
         toast.error(`Failed to delete ${table}. Please try again.`);
       }
     };
 
+    // State for storing error message from delete operation
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    
+    // Direct delete handler function without form wrapper
+    const directDeleteHandler = async () => {
+      try {
+        // Clear any previous errors
+        setDeleteError(null);
+        console.log('[DELETE DEBUG] Direct delete handler triggered for', table, 'with ID:', id);
+        
+        if (!deleteAction) {
+          console.error(`[DELETE DEBUG] No delete action implemented for ${table}`);
+          setDeleteError(`Delete action not implemented for ${table}`);
+          toast.error(`Delete action not implemented for ${table}`);
+          return;
+        }
+        
+        // Create form data manually
+        const formData = new FormData();
+        formData.append('id', id?.toString() || '');
+        
+        console.log('[DELETE DEBUG] Form data created manually:', [...formData.entries()]);
+        console.log(`[DELETE DEBUG] Calling ${deleteAction.name || 'unnamed'} action directly...`);
+        
+        // Call server action
+        const result = await deleteAction({success: false, error: false}, formData);
+        console.log('[DELETE DEBUG] Delete result:', result);
+        
+        if (result.success) {
+          console.log('[DELETE DEBUG] Delete operation successful');
+          toast.success(`${table} has been deleted!`);
+          setOpen(false);
+          router.refresh();
+        } else if (result.error && 'message' in result && result.message) {
+          console.error('[DELETE DEBUG] Server returned error:', result.message);
+          setDeleteError(result.message as string);
+          toast.error(result.message as string);
+        } else {
+          console.error('[DELETE DEBUG] Server returned unknown error state:', result);
+          setDeleteError(`Failed to delete ${table} due to an unknown error.`);
+          toast.error(`Failed to delete ${table} due to an unknown error.`);
+        }
+      } catch (error) {
+        console.error('[DELETE DEBUG] Exception during direct delete:', error);
+        setDeleteError(`An unexpected error occurred. Please try again.`);
+        toast.error(`Failed to delete ${table}. Please try again.`);
+      }
+    };
+    
     return type === "delete" && id ? (
       <div className="p-4 flex flex-col gap-4">
         <span className="text-center font-medium">
           All data will be lost. Are you sure you want to delete this {table}?
         </span>
-        <form action={handleDelete} className="flex justify-center">
-          <input type="hidden" name="id" value={id.toString()} />
+        
+        {/* Display error message when present */}
+        {deleteError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-2">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                {/* Warning icon */}
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-700">Delete Failed</h3>
+                <div className="mt-1 text-sm text-red-600">
+                  {deleteError}
+                </div>
+                {/* Render specific help message for teacher deletion constraints */}
+                {table === 'teacher' && deleteError.includes('supervising classes') && (
+                  <div className="mt-2 text-sm text-red-600">
+                    <p className="font-semibold">How to fix:</p>
+                    <ol className="list-decimal pl-5 mt-1">
+                      <li>Go to the Classes list</li>
+                      <li>Edit each class that has this teacher as supervisor</li>
+                      <li>Assign a different teacher or set to &ldquo;No Supervisor&rdquo;</li>
+                      <li>Return here and try deleting again</li>
+                    </ol>
+                  </div>
+                )}
+                {table === 'teacher' && deleteError.includes('assigned to lessons') && (
+                  <div className="mt-2 text-sm text-red-600">
+                    <p className="font-semibold">How to fix:</p>
+                    <ol className="list-decimal pl-5 mt-1">
+                      <li>Go to the Lessons list</li>
+                      <li>Either delete or reassign lessons taught by this teacher</li>
+                      <li>Return here and try deleting again</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="flex justify-center">
           <button 
-            type="submit" 
+            type="button" 
             className="bg-red-700 text-white py-2 px-4 rounded-md border-none hover:bg-red-800 transition-colors"
+            onClick={directDeleteHandler}
           >
             Delete
           </button>
-        </form>
+        </div>
       </div>
     ) : type === "create" || type === "update" ? (
       forms[table](setOpen, type, data, relatedData)

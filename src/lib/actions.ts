@@ -377,18 +377,29 @@ export const deleteTeacher = async (
       };
     }
     
-    // Delete related records first if needed
+    // Check if teacher has lessons - this is also a blocker for deletion since lessons require a teacher
     if (teacher.lessons.length > 0) {
-      console.log(`Teacher has ${teacher.lessons.length} lessons, consider reassignment`);
-      // Note: In this case, we're allowing deletion even with lessons
-      // Alternatively, we could block deletion here and require reassignment first
+      console.log(`Teacher has ${teacher.lessons.length} lessons, cannot delete`);
+      return { 
+        success: false, 
+        error: true, 
+        message: "Cannot delete teacher who is assigned to lessons. Please reassign or delete these lessons first." 
+      };
     }
     
-    // Check for any subjects that may be impacted
+    // For subjects, we can remove the relationship without blocking deletion
     if (teacher.subjects.length > 0) {
-      console.log(`Teacher has ${teacher.subjects.length} subjects assigned`);
-      // Note: For now, we're allowing deletion even with subjects assigned
-      // In a production environment, you might want to reassign these first
+      console.log(`Teacher has ${teacher.subjects.length} subjects assigned, disconnecting relationships`);
+      // Disconnect the teacher from all subjects (many-to-many relationship)
+      await prisma.teacher.update({
+        where: { id },
+        data: {
+          subjects: {
+            disconnect: teacher.subjects.map(subject => ({ id: subject.id }))
+          }
+        }
+      });
+      console.log('Disconnected teacher from all subjects');
     }
 
     // Delete from database
@@ -421,11 +432,13 @@ export const deleteTeacher = async (
       
       // Provide more specific error messages based on error code
       if (err.code === 'P2003') {
-        errorMessage += 'This teacher has related records that prevent deletion. Please reassign their responsibilities first.';
+        errorMessage += 'This teacher has related records that prevent deletion. Please reassign their lessons or classes first.';
       } else if (err.code === 'P2025') {
         errorMessage += 'Teacher record not found.';
       } else if (err.code === 'P2018') {
         errorMessage += 'Required related record not found.';
+      } else if (err.code === 'P2014' || err.code === 'P2016') {
+        errorMessage += 'Cannot delete due to existing relationships. Please remove lessons and class supervision first.';
       } else {
         errorMessage += err.message;
       }
