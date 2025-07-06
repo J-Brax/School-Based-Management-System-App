@@ -6,7 +6,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "School-Based Management System",
+  title: "School-Based Information System",
   description: "A comprehensive management system for educational institutions",
 };
 
