@@ -1,4 +1,4 @@
-# School-Based Management System
+# School-Based Information System
 
 A comprehensive school management platform built with Next.js 15, Clerk Authentication, and Prisma ORM. The system provides role-based access for administrators, teachers, students, and parents with features to manage all aspects of a school's operations.
 
